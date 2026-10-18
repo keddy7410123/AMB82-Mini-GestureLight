@@ -1,0 +1,56 @@
+#pragma once
+// Generated from web/index.html by build_web.py.
+static const char WEB_PAGE[] = R"AMB82HTML(<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gesture Light · AMB82 監看台</title>
+<style>
+:root{color-scheme:light;--ink:#183431;--muted:#647570;--paper:#f2f4ed;--line:#d9e0d5;--green:#087f69;--amber:#b26a18}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.65 system-ui,"Microsoft JhengHei",sans-serif}main{max-width:1300px;margin:auto;padding:32px}header{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid var(--line);padding-bottom:22px}.eyebrow{font:12px monospace;letter-spacing:.15em;color:var(--green)}h1{font-size:30px;letter-spacing:-.04em;margin:4px 0}h2{font-size:16px;margin:0 0 16px}p{margin:6px 0}.sub,.muted{color:var(--muted);font-size:13px}.badge{padding:7px 13px;border-radius:30px;background:#e2e9df;white-space:nowrap;font-size:13px}.badge.live{color:var(--green);background:#d9eee4}.badge.warn{color:#925411;background:#f8e8cc}.grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(270px,1fr);gap:24px;margin-top:26px}.camera{background:#102824;border-radius:18px;overflow:hidden;color:#e0eee5}.camhead{display:flex;justify-content:space-between;padding:14px 20px;font:12px monospace;color:#a8c8bc}.view{position:relative;aspect-ratio:9/5}canvas{display:block;width:100%;height:100%}.camfoot{padding:14px 20px;border-top:1px solid #29423b;font-size:12px;color:#a8c8bc}.card{background:#fffef9;border:1px solid var(--line);border-radius:18px;padding:23px}.status{font-size:25px;line-height:1.4;margin:9px 0}.keyrow{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding:12px 0;font-size:13px}.keyrow span:first-child{color:var(--muted)}progress{width:100%;height:9px;accent-color:var(--green)}.hold{margin:22px 0}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}.stat{border:1px solid var(--line);border-radius:13px;padding:12px;font-size:12px;color:var(--muted)}.stat strong{display:block;font:23px monospace;color:var(--ink);margin-bottom:4px}.events{margin-top:24px}.event{display:grid;grid-template-columns:90px 1fr;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:13px}.event time{color:var(--muted);font-family:monospace}.note{border-left:3px solid #c28a3d;padding:0 14px;font-size:13px;color:#6e614b;margin-top:22px}.legend{display:flex;gap:18px;flex-wrap:wrap;margin:15px 0;font-size:12px;color:var(--muted)}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:#33dfb8}.amber{background:#ffbd62}footer{font-size:12px;color:var(--muted);margin-top:24px}button{font:inherit;border:1px solid var(--line);background:transparent;border-radius:8px;color:var(--ink);padding:5px 12px;cursor:pointer}button:focus-visible{outline:3px solid #0b8c71}.offline{color:#925411} @media(max-width:850px){main{padding:20px}.grid{grid-template-columns:1fr}header{align-items:flex-start}h1{font-size:25px}.stats{gap:7px}}
+</style>
+<main>
+<header><div><div class="eyebrow">AMB82 MINI / V1.0</div><h1>手勢電燈監看台</h1><p class="sub">一盞燈 · 手勢 5 開燈 / 手勢 1 關燈 · 板端 YOLOv7 Tiny 辨識</p></div><span id="connection" class="badge" role="status">正在連線</span></header>
+<div class="grid"><section>
+<div class="camera"><div class="camhead"><span>CAMERA / ROI</span><span id="frameInfo">等待攝影機</span></div><div class="view"><canvas id="view" width="864" height="480" aria-label="攝影機畫面、操作區及手勢辨識框"></canvas></div><div class="camfoot">綠框：操作區 ROI　／　僅辨識操作區內影像，只顯示開燈／關燈手勢</div></div>
+<div class="legend"><span><i class="dot"></i>ROI 操作區</span><span><i class="dot amber"></i>偵測框與信心分數</span><span>畫面與辨識結果為近即時更新，非逐幀同步</span></div>
+<div class="stats"><div class="stat"><strong id="count">—</strong>累計開／關指令</div><div class="stat"><strong id="age">—</strong>辨識資料延遲 ms</div><div class="stat"><strong id="neutral">—</strong>停止脈寬 μs</div></div>
+<div class="note">S35 STD 採定時正反轉。無燈光或位置回授，執行完畢不代表電燈確實切換；需保留手動開關。</div>
+</section><aside class="card"><div class="eyebrow">CONTROL STATUS</div><div id="mode" class="status" role="status">等待板子資料</div><p id="reason" class="muted">請使用板子提供的 http://IP/ 開啟此頁。</p><p id="notice" class="note" role="status" hidden></p><div class="hold"><div class="keyrow"><span>目前判定</span><strong id="gesture">—</strong></div><progress id="hold" value="0" max="1000" aria-label="手勢持續時間"></progress><p id="holdText" class="muted">持續 1 秒後觸發</p></div><div class="keyrow"><span>最近指令</span><strong id="last">尚未送出</strong></div><div class="keyrow"><span>馬達動作</span><strong id="motor">—</strong></div><div class="keyrow"><span>校正設定</span><strong id="calibration">—</strong></div><div class="keyrow"><span>開燈／關燈 class ID</span><strong id="classes">—</strong></div><p class="muted" style="margin-top:20px">序列埠 115200：<br>a 啟用自動辨識控制<br>d / x 停止並暫停<br>j / k 短轉校正；+ / − 微調停止脈寬</p><p class="muted">重啟、斷線或推論逾時後需重新啟用。開／關指令須交替；重複手勢只顯示提示，不轉動馬達。信心門檻 60%。兩次指令間至少冷卻 2 秒，且 ROI 清空至少 0.5 秒。</p></aside></div>
+<section class="card events"><div style="display:flex;justify-content:space-between;gap:16px"><h2>最近事件</h2><button id="export" type="button">匯出目前紀錄</button></div><div id="events" aria-live="polite"><p class="muted">尚未取得事件。板子保留最近 12 筆，重啟後清除。</p></div></section>
+<footer>辨識在 AMB82 執行；此頁只負責顯示。事件時間為板子開機後經過時間。僅限可信任的區域網路使用。</footer>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id), canvas=$('view'), ctx=canvas.getContext('2d');
+let state=null, bitmap=null, lastImageAt=0;
+const words={already_open_ignored:'已經開燈，不用啟動馬達',already_closed_ignored:'已經關燈，不用啟動馬達',stroke_finished_unverified:'馬達單方向轉動結束，實際燈況未確認',OPEN_command_sent_unverified:'已送出開燈指令，實際燈況未確認',CLOSE_command_sent_unverified:'已送出關燈指令，實際燈況未確認',armed_remove_hand_first:'自動控制啟用，請先移開手勢',stopped_disarmed:'馬達停止，自動控制暫停',inference_stale_disarmed:'推論資料逾時，已停止並暫停',wifi_lost_disarmed:'Wi-Fi 斷線，已停止並暫停',arm_rejected_calibrate_Config_first:'尚未完成校正，無法啟用自動控制',neutral_adjusted_save_to_Config:'停止脈寬已微調，請抄回 Config.h',jog_open_direction:'開燈方向短轉校正',jog_close_direction:'關燈方向短轉校正'};
+function render(){
+ const w=canvas.width,h=canvas.height;ctx.fillStyle='#102824';ctx.fillRect(0,0,w,h);
+ if(bitmap&&Date.now()-lastImageAt<3500)ctx.drawImage(bitmap,0,0,w,h);
+ else{ctx.fillStyle='#a8c8bc';ctx.font='20px system-ui';ctx.textAlign='center';ctx.fillText('等待攝影機畫面',w/2,h/2);ctx.textAlign='left';}
+ const roi=state?.roi||[.2,.15,.8,.85];ctx.strokeStyle='#33dfb8';ctx.lineWidth=3;ctx.setLineDash([10,6]);ctx.strokeRect(roi[0]*w,roi[1]*h,(roi[2]-roi[0])*w,(roi[3]-roi[1])*h);ctx.setLineDash([]);ctx.font='15px system-ui';ctx.fillStyle='#33dfb8';ctx.fillText('ROI',roi[0]*w+8,roi[1]*h-10);
+ if(!state||state.stale)return;
+ for(const b of state.boxes){if(b.id!==state.open_class&&b.id!==state.close_class)continue;const [l,t,r,bt]=b.box;if(![l,t,r,bt].every(Number.isFinite)||r<=l||bt<=t||l<roi[0]||t<roi[1]||r>roi[2]||bt>roi[3])continue;const name=b.id===state.open_class?'開燈':'關燈';const text=`${name} #${b.id} · ${b.score}%`;ctx.strokeStyle='#ffbd62';ctx.lineWidth=2;ctx.strokeRect(l*w,t*h,(r-l)*w,(bt-t)*h);ctx.fillStyle='#ffbd62';const y=Math.max(23,t*h);ctx.fillRect(l*w,y-23,ctx.measureText(text).width+16,23);ctx.fillStyle='#162c27';ctx.fillText(text,l*w+8,y-6);}
+}
+function update(s){
+ const duplicate=s.duplicate_command;const notice=$('notice');notice.hidden=s.stale||(duplicate!==0&&duplicate!==1);notice.textContent=duplicate===0?'已經開燈，請改用關燈手勢。':duplicate===1?'已經關燈，請改用開燈手勢。':'';
+ state=s;$('connection').textContent=s.stale?'推論逾時':'板子已連線';$('connection').className='badge '+(s.stale?'warn':'live');
+ $('mode').textContent=s.stale?'推論資料逾時':!s.armed?'自動控制已暫停':s.busy?'馬達動作中':duplicate===0?'已經開燈，不用啟動馬達':duplicate===1?'已經關燈，不用啟動馬達':s.ready?'等待有效手勢':'等待離開操作區';
+ $('reason').textContent=s.stale?'請檢查模型與攝影機；恢復後重新輸入 a。':!s.armed?'確認模型與馬達校正後，在序列埠輸入 a。':s.busy?'正在依開／關指令單方向轉動 280ms；實際燈況需人工確認。':s.ready?'只接受 ROI 內單一、信心達 60% 的開／關交替手勢。':'請讓 ROI 清空至少 0.5 秒，並等待冷卻結束。';
+ $('gesture').textContent=s.stale?'資料失效':s.candidate===0?'開燈手勢':s.candidate===1?'關燈手勢':'無有效手勢';
+ $('hold').max=s.hold_ms;$('hold').value=s.stale?0:s.held_ms;$('holdText').textContent=`${s.stale?0:s.held_ms} / ${s.hold_ms} ms`;
+ $('last').textContent=s.last_command===0?'開燈指令已送出':s.last_command===1?'關燈指令已送出':'尚未送出';$('motor').textContent=s.busy?'動作中':'停止';$('calibration').textContent=s.calibrated?'已設定，仍需實測':'尚未校正';$('classes').textContent=`${s.open_class} / ${s.close_class}`;
+ $('count').textContent=s.commands;$('age').textContent=s.age_ms;$('neutral').textContent=s.neutral_us;$('frameInfo').textContent=`INFERENCE #${s.seq}`;
+ const list=$('events');list.replaceChildren();if(!s.events.length){const p=document.createElement('p');p.className='muted';p.textContent='尚無事件。板子保留最近 12 筆，重啟後清除。';list.append(p);}
+ for(const e of s.events){const row=document.createElement('div');row.className='event';const t=document.createElement('time');t.textContent=(e.ms/1000).toFixed(1)+' s';const text=document.createElement('span');text.textContent=words[e.text]||e.text;row.append(t,text);list.append(row);}render();
+}
+async function get(url){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),2800);try{const r=await fetch(url,{cache:'no-store',signal:controller.signal});if(!r.ok)throw new Error('HTTP '+r.status);return await r.blob();}finally{clearTimeout(timer);}}
+async function poll(){
+ try{const blob=await get('/api/status');update(JSON.parse(await blob.text()));const frame=await get('/frame.jpg');const next=await createImageBitmap(frame);if(bitmap)bitmap.close();bitmap=next;lastImageAt=Date.now();render();}
+ catch(e){$('connection').textContent='連線中斷／無法更新';$('connection').className='badge warn';$('mode').textContent='監看資料已失效';$('reason').textContent='請確認與板子位於同一個 Wi-Fi。連線會自動重試。';$('gesture').textContent='資料失效';$('motor').textContent='無法確認';$('notice').hidden=true;$('hold').value=0;$('age').textContent='—';if(state)state.stale=true;render();}
+ finally{setTimeout(poll,250);}
+}
+$('export').addEventListener('click',()=>{if(!state)return;const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='gesture-light-status.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);});
+render();poll();
+</script>
+</html>
+)AMB82HTML";
