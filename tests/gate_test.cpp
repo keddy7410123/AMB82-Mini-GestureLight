@@ -10,8 +10,8 @@ static void clearROI(GestureGate &g, uint32_t t) {
     assert(g.ready);
 }
 static int hold(GestureGate &g, uint32_t t, int c) {
-    for (unsigned i=0;i<4;++i) assert(g.update(t+i*250,c,false,true)==-1);
-    return g.update(t+1000,c,false,true);
+    for (unsigned i=0;i<4;++i) assert(g.update(t+i*(cfg::HOLD_MS/4),c,false,true)==-1);
+    return g.update(t+cfg::HOLD_MS,c,false,true);
 }
 int main() {
     Frame frame; bool empty=false;
@@ -20,7 +20,7 @@ int main() {
     assert(classify(frame,empty)==0 && !empty);
     frame.boxes[0].id=0;assert(classify(frame,empty)==1);
     for(int id=1;id<=3;++id){frame.boxes[0].id=id;assert(classify(frame,empty)==-1 && !empty);}
-    frame.boxes[0].id=4;frame.boxes[0].score=74;
+    frame.boxes[0].id=4;frame.boxes[0].score=cfg::CONFIDENCE-1;
     assert(classify(frame,empty)==-1 && !empty);
     frame.boxes[0].score=95;frame.boxes[0].l=.1f; // straddles ROI
     assert(classify(frame,empty)==-1 && !empty);
@@ -43,7 +43,7 @@ int main() {
     clearROI(g,9750);
     assert(hold(g,10500,1)==1);
     // Release alone cannot bypass cooldown.
-    g.update(11750,-1,true,true);g.update(12000,-1,true,true);g.update(12250,-1,true,true);
+    g.update(11250,-1,true,true);g.update(11500,-1,true,true);g.update(11750,-1,true,true);
     assert(!g.ready);
     g.update(12750,-1,true,true);g.update(13500,-1,true,true);assert(g.ready);
     // Invalid detection interrupts continuity.
@@ -54,7 +54,7 @@ int main() {
     g.reset();clearROI(g,0);
     g.update(750,0,false,true);g.update(1000,0,false,true);
     assert(g.update(2500,0,false,true)==-1);assert(!g.ready);
-    // Repeated calls at the same timestamp cannot complete a one-second hold.
+    // Repeated calls at the same timestamp cannot complete a sustained hold.
     g.reset();clearROI(g,0);
     for(unsigned i=0;i<500;++i)assert(g.update(750,0,false,true)==-1);
     // Disable and stale invalidate require a new empty interval.

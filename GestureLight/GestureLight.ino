@@ -23,14 +23,16 @@ constexpr unsigned LOG_CAP = 12;
 struct Event { uint32_t ms; const char *text; };
 struct Shared {
     Frame frame;
+    bool recognitionEnabled = true;
+    uint32_t recognitionVersion = 0;
     bool armed = false, busy = false, ready = false;
     int candidate = -1, lastCommand = -1, duplicateCommand = -1, neutral = cfg::STOP_US;
     uint32_t held = 0, commands = 0, eventCount = 0;
     Event events[LOG_CAP];
 } shared;
 SemaphoreHandle_t mutex;
-VideoSetting preview(cfg::NN_WIDTH, cfg::NN_HEIGHT, 10, VIDEO_JPEG, 1);
-VideoSetting nnVideo(cfg::NN_WIDTH, cfg::NN_HEIGHT, 10, VIDEO_RGB, 0);
+VideoSetting preview(cfg::NN_WIDTH, cfg::NN_HEIGHT, cfg::PREVIEW_FPS, VIDEO_JPEG, 1);
+VideoSetting nnVideo(cfg::NN_WIDTH, cfg::NN_HEIGHT, cfg::INFERENCE_INPUT_FPS, VIDEO_RGB, 0);
 NNObjectDetection detector;
 StreamIO nnLink(1, 1);
 AmebaServo motor;
@@ -55,6 +57,7 @@ void detectionCallback(std::vector<ObjectDetectionResult> results) {
         f.boxes[f.count++] = box;
     }
     xSemaphoreTake(mutex, portMAX_DELAY);
+    if (!shared.recognitionEnabled) { xSemaphoreGive(mutex); return; }
     f.seq = shared.frame.seq + 1;
     shared.frame = f;
     xSemaphoreGive(mutex);
@@ -62,8 +65,8 @@ void detectionCallback(std::vector<ObjectDetectionResult> results) {
 // Motor/control task owns PWM. No socket or camera capture calls in this task.
 void controlTask(void *) {
     GestureGate gate;
-    uint32_t processed = 0, phaseStart = 0;
-    int phase = 0, action = -1; // 0 idle, 1 gesture stroke, 4 manual jog
+    uint32_t processed = 0, phaseStart = 0, recognitionVersion = 0;
+    int phase = 0, action = -1; // 0 idle, 1 gesture stroke
     uint32_t duration = 0;
     bool recognitionLedOn = false;
     uint32_t recognitionLedStart = 0;
@@ -82,42 +85,40 @@ void controlTask(void *) {
             digitalWrite(LED_B, LOW);
             recognitionLedOn = false;
         }
+        if (recognitionVersion != shared.recognitionVersion) {
+            recognitionVersion = shared.recognitionVersion;
+            gate.reset(); processed = shared.frame.seq;
+            // Stop even if disable/enable happened between two control ticks.
+            if (phase) motor.writeMicroseconds(shared.neutral);
+            phase = 0; shared.armed = false;
+            if (recognitionLedOn) digitalWrite(LED_B, LOW);
+            recognitionLedOn = false;
+        }
+        if (!shared.recognitionEnabled) {
+            if (phase || shared.armed) motor.writeMicroseconds(shared.neutral);
+            phase = 0; shared.armed = false;
+            if (recognitionLedOn) digitalWrite(LED_B, LOW);
+            recognitionLedOn = false;
+            gate.reset(); processed = shared.frame.seq;
+            if (recognitionLedOn) digitalWrite(LED_B, LOW);
+            recognitionLedOn = false;
+        }
         bool fresh = shared.frame.seq && uint32_t(now - shared.frame.ms) <= cfg::STALE_MS;
         bool wifi = WiFi.status() == WL_CONNECTED;
-        if (!fresh || !wifi) {
+        bool systemReady = shared.recognitionEnabled && fresh && wifi && cfg::MOTOR_CALIBRATED;
+        if (!systemReady) {
             gate.invalidate();
             if (shared.armed) {
                 shared.armed = false;
                 motor.writeMicroseconds(shared.neutral); phase = 0;
-                logEvent(now, wifi ? "inference_stale_disarmed" : "wifi_lost_disarmed");
+                logEvent(now, wifi ? "inference_waiting_auto_resume" : "wifi_waiting_auto_resume");
             }
+        } else if (!shared.armed) {
+            // Boot or recovery: automatically wait for a clear ROI before accepting gestures.
+            shared.armed = true; gate.reset(); processed = shared.frame.seq;
+            logEvent(now, "auto_control_ready_remove_hand_first");
         }
         int requested = -1;
-        // One byte per iteration avoids serial floods delaying the motor deadline.
-        if (Serial.available()) {
-            char c = Serial.read();
-            if (c == 'x' || c == 'd' || c == 'n') {
-                shared.armed = false; phase = 0; gate.reset();
-                motor.writeMicroseconds(shared.neutral);
-                logEvent(now, "stopped_disarmed");
-            } else if (c == 'a' && !phase && fresh && wifi) {
-                if (cfg::MOTOR_CALIBRATED) {
-                    shared.armed = true; gate.reset(); processed = shared.frame.seq;
-                    logEvent(now, "armed_remove_hand_first");
-                } else logEvent(now, "arm_rejected_calibrate_Config_first");
-            } else if (!shared.armed && !phase && (c == '+' || c == '-')) {
-                int next = shared.neutral + (c == '+' ? 5 : -5);
-                if (next >= 1400 && next <= 1600) shared.neutral = next;
-                motor.writeMicroseconds(shared.neutral);
-                logEvent(now, "neutral_adjusted_save_to_Config");
-            } else if (!shared.armed && !phase && (c == 'j' || c == 'k')) {
-                phase = 4; phaseStart = now; duration = cfg::JOG_MS;
-                motor.writeMicroseconds(c == 'j' ? cfg::OPEN_US : cfg::CLOSE_US);
-                logEvent(now, c == 'j' ? "jog_open_direction" : "jog_close_direction");
-            } else if (!shared.armed && !phase && cfg::MOTOR_CALIBRATED && (c == 'o' || c == 'f')) {
-                requested = c == 'o' ? 0 : 1;
-            }
-        }
         if (shared.frame.seq != processed) {
             processed = shared.frame.seq;
             bool empty = false;
@@ -126,14 +127,13 @@ void controlTask(void *) {
             if (result >= 0) {
                 requested = result;
                 // Confirmed gestures flash even when a duplicate is ignored.
-                // Serial/manual commands do not count as recognition.
                 digitalWrite(LED_B, HIGH);
                 recognitionLedOn = true;
                 recognitionLedStart = now;
             }
         }
         if (requested >= 0 && !phase) {
-            // Preserve lastCommand across stop/re-arm and Wi-Fi/inference loss.
+            // Preserve lastCommand across Wi-Fi/inference loss.
             // -1 at boot means unknown: either first gesture is accepted.
             if (requested == shared.lastCommand) {
                 shared.duplicateCommand = requested;
@@ -148,7 +148,8 @@ void controlTask(void *) {
                 logEvent(now, action == 0 ? "OPEN_command_sent_unverified" : "CLOSE_command_sent_unverified");
             }
         }
-        shared.busy = phase != 0; shared.ready = gate.ready;
+        shared.busy = phase != 0;
+        shared.ready = gate.ready;
         shared.candidate = gate.candidate; shared.held = gate.heldMs;
         xSemaphoreGive(mutex);
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -197,8 +198,11 @@ String statusJson() {
     String j; j.reserve(6000);
     j += "{\"uptime_ms\":"; j += now;
     j += ",\"seq\":"; j += s.frame.seq;
+    j += ",\"preview_fps\":"; j += cfg::PREVIEW_FPS;
+    j += ",\"inference_input_fps\":"; j += cfg::INFERENCE_INPUT_FPS;
     j += ",\"age_ms\":"; j += uint32_t(now - s.frame.ms);
-    j += ",\"stale\":"; j += (!s.frame.seq || uint32_t(now - s.frame.ms) > cfg::STALE_MS) ? "true" : "false";
+    j += ",\"stale\":"; j += (s.recognitionEnabled && (!s.frame.seq || uint32_t(now - s.frame.ms) > cfg::STALE_MS)) ? "true" : "false";
+    j += ",\"recognition_enabled\":"; j += s.recognitionEnabled ? "true" : "false";
     j += ",\"armed\":"; j += s.armed ? "true" : "false";
     j += ",\"busy\":"; j += s.busy ? "true" : "false";
     j += ",\"ready\":"; j += s.ready ? "true" : "false";
@@ -217,7 +221,7 @@ String statusJson() {
     j += ','; j += String(cfg::ROI_R, 6); j += ','; j += String(cfg::ROI_B, 6);
     j += "],\"boxes\":[";
     unsigned published = 0;
-    for (unsigned i = 0; i < s.frame.count; ++i) {
+    for (unsigned i = 0; s.recognitionEnabled && i < s.frame.count; ++i) {
         const Box &b = s.frame.boxes[i];
         if (!targetClass(b.id) || !insideRoi(b)) continue;
         if (published++) j += ',';
@@ -237,9 +241,35 @@ String statusJson() {
     j += "]}";
     return j;
 }
+// HTTP only requests a mode change. controlTask remains the sole PWM owner.
+void setRecognitionEnabled(bool enabled) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    if (shared.recognitionEnabled != enabled) {
+        shared.recognitionEnabled = enabled;
+        ++shared.recognitionVersion;
+        shared.frame.count = 0; shared.frame.overflow = false;
+        shared.frame.ms = 0; shared.frame.seq = 0; // require fresh inference after resuming
+        shared.candidate = -1; shared.held = 0; shared.ready = false;
+        shared.duplicateCommand = -1;
+        logEvent(millis(), enabled ? "recognition_enabled_web" : "recognition_disabled_web");
+    }
+    xSemaphoreGive(mutex);
+}
+// Pause NN delivery only AFTER the control task has stopped the motor.
+// These SDK operations can block, so keep them out of the motor task/mutex.
+void syncInferenceStream() {
+    static bool paused = false;
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool enabled = shared.recognitionEnabled;
+    bool stopped = !shared.busy && !shared.armed;
+    xSemaphoreGive(mutex);
+    if (!enabled && stopped && !paused) { nnLink.pause(); paused = true; }
+    else if (enabled && paused) { nnLink.resume(); paused = false; }
+}
 void httpTask(void *) {
     uint32_t retry = 0, lastAddressPrint = 0;
     for (;;) {
+        syncInferenceStream();
         if (WiFi.status() != WL_CONNECTED) {
             if (httpListenFd >= 0) { lwip_close(httpListenFd); httpListenFd = -1; }
             if (!retry || uint32_t(millis() - retry) >= 15000) {
@@ -284,9 +314,15 @@ void httpTask(void *) {
             else vTaskDelay(pdMS_TO_TICKS(1));
         }
         char method[8] = {0}, path[96] = {0};
-        if (complete && sscanf(request, "%7s %95s", method, path) == 2 && !strcmp(method, "GET")) {
+        if (complete && sscanf(request, "%7s %95s", method, path) == 2) {
             char *query = strchr(path, '?'); if (query) *query = 0;
-            if (!strcmp(path, "/")) respond(c, "text/html; charset=utf-8", (const uint8_t *)WEB_PAGE, strlen(WEB_PAGE));
+            if (!strcmp(method, "POST") &&
+                (!strcmp(path, "/api/recognition/enable") || !strcmp(path, "/api/recognition/disable"))) {
+                setRecognitionEnabled(!strcmp(path, "/api/recognition/enable"));
+                String j = statusJson(); respond(c, "application/json", (const uint8_t *)j.c_str(), j.length());
+            } else if (strcmp(method, "GET")) {
+                respond(c, "text/plain", (const uint8_t *)"Method not allowed", 18, 405);
+            } else if (!strcmp(path, "/")) respond(c, "text/html; charset=utf-8", (const uint8_t *)WEB_PAGE, strlen(WEB_PAGE));
             else if (!strcmp(path, "/api/status")) {
                 String j = statusJson(); respond(c, "application/json", (const uint8_t *)j.c_str(), j.length());
             } else if (!strcmp(path, "/frame.jpg")) {
@@ -319,7 +355,7 @@ void setup() {
     detector.configVideo(nnVideo);
     // Configure AFTER configVideo (which resets ROI) and BEFORE begin.
     detector.configRegionOfInterest(cfg::ROI_XMIN, cfg::ROI_XMAX, cfg::ROI_YMIN, cfg::ROI_YMAX);
-    Serial.println("GESTURE_ROI280 input_crop=116,48,460,272 classes=4,0 stroke_ms=280 return_ms=0");
+    Serial.println("GESTURE_AUTO hold_ms=500 serial_control=disabled");
     detector.configThreshold(cfg::DETECT_THRESHOLD, 0.45f);
     detector.setResultCallback(detectionCallback);
     detector.modelSelect(OBJECT_DETECTION, CUSTOMIZED_YOLOV7TINY, NA_MODEL, NA_MODEL);
@@ -331,6 +367,6 @@ void setup() {
     Camera.channelBegin(0); Camera.channelBegin(3);
     if (xTaskCreate(controlTask, "motor", 4096, NULL, 3, NULL) != pdPASS) fatal("Motor task failed");
     if (xTaskCreate(httpTask, "monitor", 12288, NULL, 1, NULL) != pdPASS) fatal("HTTP task failed");
-    Serial.println("Paused. j/k:280ms jog; +/-:neutral trim; n/x/d:stop; a:arm; o/f:manual stroke (calibrated only).");
+    Serial.println("AUTO_START: recognition defaults ON; web buttons enable/disable; no serial input commands.");
 }
 void loop() { delay(1000); }
